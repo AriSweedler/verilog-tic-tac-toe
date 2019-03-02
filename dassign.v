@@ -41,7 +41,40 @@ module move_validity();
 
 endmodule
 
-/* 11:25 */
+/* 3 in a row means a winner.
+ * No winner with 9 occupied spaces means cat's game.
+ * No winner with less than 9 occupied spaces means the game is still going
+ */
+`DEFINE ST_WINX 2'd0
+`DEFINE ST_WIN0 2'd1
+`DEFINE ST_CATS 2'd2
+`DEFINE ST_NONE 2'd3
+module check_win();
+  output result[1:0]; //output state
+  input occ_pos[8:0]; //is there an X or O here?
+  input occ_player[8:0]; //if so, which one is it.
+
+  /* The grid looks like this:
+   * 8 | 7 | 6
+   * --|---|---
+   * 5 | 4 | 3
+   * --|---|---
+   * 2 | 1 | 0
+   */
+
+  /* Winning combinations:
+   * 852, 741, 630, 876, 543, 210, 840, 642
+   */
+  //TODO make a module that takes 3 inputs and says "there is a win here" or
+  //nothing.
+
+  /* if ANY possible win is true, then return who won.
+   * Otherwise, check for a cat's game.
+   * Otherwise, return ST_NONE
+   * always @(*)
+   */
+
+endmodule
 /********************************** plan ***********************************/
 /*
  * (1) a state machine that determines behavior of each LED ~???~
