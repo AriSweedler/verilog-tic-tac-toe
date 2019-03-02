@@ -45,15 +45,44 @@ module game(turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, butt
       game_state <= `GAME_ST_START;
     else begin
       if (game_state == `GAME_ST_START) begin
+        game_state <= `GAME_ST_TURN_X;
       end else if (game_state == `GAME_ST_TURN_X) begin
+        if (detect_O) game_state <= `GAME_ST_ERR_X;
+        if (detect_X) begin
+          //TODO a valid X is placed
+        end else game_state <= game_state;
       end else if (game_state == `GAME_ST_TURN_O) begin
+        if (detect_X) game_state <= `GAME_ST_ERR_O;
+        if (detect_O) begin
+          //TODO a valid O is placed
+        end else game_state <= game_state;
       end else if (game_state == `GAME_ST_ERR_X) begin
+        if (detect_X) begin
+          //TODO a valid X is placed
+        end else game_state <= game_state;
       end else if (game_state == `GAME_ST_ERR_O) begin
+        if (detect_O) begin
+          //TODO a valid O is placed
+        end else game_state <= game_state;
       end else if (game_state == `GAME_ST_CHECK_X) begin
+        if (~valid) game_state == `GAME_ST_ERR_X
+        else if (result == `WIN_ST_WINX) game_state <= `GAME_ST_WIN_X;
+        else if (result == `WIN_ST_CATS) game_state <= `GAME_ST_CATS;
+        else if (result == `WIN_ST_NONE) game_state <= `GAME_ST_TURN_O;
+        else game_state <= game_state;
       end else if (game_state == `GAME_ST_CHECK_O) begin
+        if (~valid) game_state == `GAME_ST_ERR_O)
+        else if (result == `WIN_ST_WINO) game_state <= `GAME_ST_WIN_O;
+        else if (result == `WIN_ST_CATS) game_state <= `GAME_ST_CATS;
+        else if (result == `WIN_ST_NONE) game_state <= `GAME_ST_TURN_X;
+        else game_state <= game_state;
       end else if (game_state == `GAME_ST_WIN_X) begin
+        game_state <= game_state;
       end else if (game_state == `GAME_ST_WIN_O) begin
+        game_state <= game_state;
       end else if (game_state == `GAME_ST_CATS) begin
+        game_state <= game_state;
+      end
     end
   end
 
