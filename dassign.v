@@ -36,33 +36,43 @@ module game(turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, butt
 
   wire occ_square[8:0];
   wire occ_player[8:0];
-  /**************************** begin game logic *****************************/
+  wire game_state[3:0];
+
+  wire valid_move_X, valid_move_O, valid_move;
+  check_valid_move cvm (valid_move, occ_square, sel_pos);
+  assign valid_move_X = valid_move & ((game_state == `GAME_ST_TURN_X) | (game_state == `GAME_ST_ERR_X));
+  assign valid_move_O = valid_move & ((game_state == `GAME_ST_TURN_O) | (game_state == `GAME_ST_ERR_O));
+
   /* asynchronous resets */
-  always @ (posedge clk, negedge reset) begin
+  always @ (posedge clk, posedge reset) begin
     if (reset) begin
-      occ_square <= 0;
-      occ_player <= 0;
+      occ_square <= 9'b000000000;
+      occ_player <= 9'b000000000;
       game_state <= `GAME_ST_START;
     else begin
       if (game_state == `GAME_ST_START) begin
         game_state <= `GAME_ST_TURN_X;
       end else if (game_state == `GAME_ST_TURN_X) begin
-        if (detect_O) game_state <= `GAME_ST_ERR_X;
-        if (detect_X) begin
-          //TODO a valid X is placed
+        if (buttonO_debounce) game_state <= `GAME_ST_ERR_X;
+        else if (buttonX_debounce) begin
+          occ_square <= (occ_square) | (sel_pos); //mark this square as occupied
+          occ_player <= (occ_player) | (sel_pos); //set the selected position to high (X)
         end else game_state <= game_state;
       end else if (game_state == `GAME_ST_TURN_O) begin
-        if (detect_X) game_state <= `GAME_ST_ERR_O;
-        if (detect_O) begin
-          //TODO a valid O is placed
+        if (buttonX_debounce) game_state <= `GAME_ST_ERR_O;
+        else if (buttonO_debounce) begin
+          occ_square <= (occ_square) | (sel_pos); //mark this square as occupied
+          occ_player <= (occ_player | sel_pos) ^ (sel_pos); //set the selected position to low
         end else game_state <= game_state;
       end else if (game_state == `GAME_ST_ERR_X) begin
-        if (detect_X) begin
-          //TODO a valid X is placed
+        if (buttonX_debounce) begin
+          occ_square <= (occ_square) | (sel_pos); //mark this square as occupied
+          occ_player <= (occ_player) | (sel_pos); //set the selected position to high (X)
         end else game_state <= game_state;
       end else if (game_state == `GAME_ST_ERR_O) begin
-        if (detect_O) begin
-          //TODO a valid O is placed
+        if (buttonO_debounce) begin
+          occ_square <= (occ_square) | (sel_pos); //mark this square as occupied
+          occ_player <= (occ_player | sel_pos) ^ (sel_pos); //set the selected position to low (O)
         end else game_state <= game_state;
       end else if (game_state == `GAME_ST_CHECK_X) begin
         if (~valid) game_state == `GAME_ST_ERR_X
@@ -91,21 +101,6 @@ module game(turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, butt
 
 endmodule
 
-
-/* A move is valid if it is player X's turn and an X is placed in an
- * unoccupied square. Or if it is player O's turn and an O is placed in an
- * unoccupied square.
- */
-module move_validity();
-  output valid;
-
-  input cur_game_st[???]; //who's turn is it?
-  input buttonX, buttonO; //who tried to make a move?
-  input occ_square[8:0]; //this the half of our state where it's occupied or not, not about X or O
-  input sel_pos[8:0]; //where is the move going?
-
-
-endmodule
 
 /* 3 in a row means a winner.
  * No winner with 9 occupied spaces means cat's game.
@@ -150,11 +145,11 @@ module check_win(result, occ_square, occ_player);
 
   always @(*) begin
     if (isWinner) begin
-      result = {isWinner, winningPlayer};
+      result <= {isWinner, winningPlayer};
     end else if (& occ_square) begin
-      result = `WIN_ST_CATS;
+      result <= `WIN_ST_CATS;
     end else begin
-      result = `WIN_ST_NONE;
+      result <= `WIN_ST_NONE;
     end
   end
 endmodule
@@ -178,6 +173,23 @@ module check_trey(win, player, occ_square, occ_player);
    * winning player (default 'player' to 0, unless there was a winner. Then
    * let it have it's true value */
   assign player = win & occ_player[0];
+endmodule
+
+/* (2) logic that checks a move for validity */
+module check_valid_move(valid, occ_square, sel_pos);
+  output valid;
+
+  input occ_square[8:0];
+  input sel_pos[8:0];
+  input game_state[3:0];
+
+  /* Only place a tile in an unoccupied square */
+  assign wire isUnoccupied = (occ_square & sel_pos) == 9'b000000000;
+
+  /* Only place 1 tile at a time */
+  assign wire isOneHot = sel_pos[0] + sel_pos[1] + sel_pos[2] + sel_pos[3] + sel_pos[4] + sel_pos[5] + sel_pos[6] + sel_pos[7] + sel_pos[8]) == 4'b0001;
+
+  assign valid = isUnoccupied & isOneHot;
 endmodule
 /********************************** plan ***********************************/
 /*
