@@ -43,6 +43,11 @@ module game(turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, butt
   assign valid_move_X = valid_move & ((game_state == `GAME_ST_TURN_X) | (game_state == `GAME_ST_ERR_X));
   assign valid_move_O = valid_move & ((game_state == `GAME_ST_TURN_O) | (game_state == `GAME_ST_ERR_O));
 
+  debouncer db_buttonX (buttonX_debounce, buttonX, clk, rst);
+  debouncer db_buttonO (buttonO_debounce, buttonO, clk, rst);
+
+  game_st_driver _game_st_driver (game_st, game_state);
+
   /* asynchronous resets */
   always @ (posedge clk, posedge reset) begin
     if (reset) begin
@@ -191,9 +196,108 @@ module check_valid_move(valid, occ_square, sel_pos);
 
   assign valid = isUnoccupied & isOneHot;
 endmodule
-/********************************** plan ***********************************/
-/*
- * (1) a state machine that determines behavior of each LED ~???~
- * (2) logic that checks a move for validity
- *   * Driver between internal state and ASCII representation
- */
+
+`define ASCII_X //TODO
+`define ASCII_O //TODO
+`define ASCII_C //TODO
+`define ASCII_E //TODO
+`define ASCII_NONE //TODO
+/* Driver between internal game state and ASCII output */
+module game_st_driver (game_st, game_state);
+  output game_st[7:0];
+  input game_state[3:0];
+  always @(*) begin
+    case (game_state)
+      `GAME_ST_WIN_X: game_st <= `ASCII_X;
+      `GAME_ST_WIN_O: game_st <= `ASCII_O;
+      `GAME_ST_CATS: game_st <= `ASCII_C;
+      `GAME_ST_ERR_X,
+      `GAME_ST_ERR_O: game_st <= `ASCII_E;
+      default: game_st <= `ASCII_NONE;
+    endcase
+  end
+endmodule
+
+module occ_pos_driver (occ_pos, occ_square, occ_player, trey_winner, flash_clk, rst);
+  output occ_pos[8:0];
+  input occ_square[8:0];
+  input occ_player[8:0];
+  input trey_winner[7:0];
+  input rst;
+  input flash_clk;
+
+  reg occ_O_mask[8:0];
+  //flash_clk oo00oo00oo00
+  //occ_O     oo0000oooo00
+
+  always @(posedge flash_clk) begin
+    if (rst) occ_O_mask = 9'b000000000;
+    else occ_O_mask = ~occ_O_mask;
+  end
+
+  wire pre_occ_pos[8:0];
+  assign pre_occ_pos = occ_square & (occ_player | occ_O_mask);
+  /* Each occ_pos signal is 1'b0 to indicate unoccupied
+   * 1'b1 to indicate occupied by X
+   * flashing 1'b1 at a rate of ½ flash_clk to indicate occupied by O */
+
+  wire flash_clk_mask[8:0];
+  assign wire flash_clk_mask = {flash_clk, flash_clk, flash_clk, flash_clk, flash_clk, flash_clk, flash_clk, flash_clk, flash_clk};
+
+  reg trey_mask[8:0];
+  always @(*) begin
+    if (trey_winner[0]) trey_mask <= 9'b110110110; //852
+    else if (trey_winner[1]) trey_mask <= 9'b101101101; //741
+    else if (trey_winner[2]) trey_mask <= 9'b011011011; //630
+    else if (trey_winner[3]) trey_mask <= 9'b111111000; //876
+    else if (trey_winner[4]) trey_mask <= 9'b111000111; //543
+    else if (trey_winner[5]) trey_mask <= 9'b000111111; //210
+    else if (trey_winner[6]) trey_mask <= 9'b011101110; //840
+    else if (trey_winner[7]) trey_mask <= 9'b110101011; //642
+    else trey_mask <= 9'b111111111; //no winner
+  end
+
+  assign occ_pos = pre_occ_pos & (trey_mask | flash_clk_mask);
+  /* For example, is the winning trey is '012', then trey_mask ORed with
+   * flash_clk_mask alters between 000111111 and 111111111. */
+endmodule
+
+/* TODO, do we wanna debounce, or do we wanna only detect posedge... */
+module debouncer (btn_posedge, btn, clk_in, rst);
+  parameter POW = 16; /* downsample the clock by 2^POW */
+  output reg btn_posedge;
+  input btn, clk_in, rst;
+
+  reg clk_en, clk_en_d; /* slower clocks - downsampled */
+  reg [2:0] step_d;		/* state of button press - stepd[2] is most recent */
+  reg [POW:0] clk_dv;	/* counter buffer to divide the clock */
+  wire [POW+1:0] clk_dv_inc;	/* counter buffer with overflow - used to pulse downsampled clock */
+
+  assign clk_dv_inc = clk_dv + 1;
+  always @ (posedge clk_in) begin
+    if (rst) begin
+      clk_dv <= 0;
+      clk_en <= 0;
+      clk_en_d <= 0;
+    end else begin
+      clk_dv <= clk_dv_inc[POW:0]; /* increment counter */
+      clk_en <= clk_dv_inc[POW+1]; /* the overflow bit in the counter IS the clock tick - simply downsample by a factor of 2 */
+      clk_en_d <= clk_en; /* delay this downsampled clock by 1 tick */
+    end
+  end
+
+  always @ (posedge clk_in) begin
+    if (rst) step_d[2:0] <= 0;
+    else if (clk_en) step_d[2:0] <= {btn, step_d[2:1]};
+  end
+
+  // Detecting posedge of btn
+  wire is_btn_posedge;
+  assign is_btn_posedge = ~ step_d[0] & step_d[1];
+  always @ (posedge clk_in) begin
+    if (rst) btn_posedge <= 0;
+    else if (clk_en_d) btn_posedge <= is_btn_posedge;
+    else btn_posedge <= 0;
+  end
+
+endmodule
