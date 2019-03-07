@@ -1,19 +1,5 @@
 /* For my internal state, X is 1, O is 0 */
 
-// reset signal starts the game. As long as the reset = 1'b1, the game is in reset
-
-// Each occ_pos signal is 1'b0 to indicate unoccupied, 1'b1 to indicate
-// occupied by X, and flashing 1'b1 at a rate of ½ flash_clk ~to indicate
-// occupied by O~
-
-// 8 signals, game_st[7:0] (an ASCII character), to indicate the state of the
-// game. 'X' to indicate the winner is X's player, 'O' to indicate the winner
-// is O's player, 'C' to indicate a tie ('Cats-Game'), and 'E' to indicate an
-// error. ~All 0s to indicate game is still going~
-  // An error is detected if a player tries to place and X or O on an occupied
-  // square, tries to place more than 1 X or O at a time, or if an X or O is
-  // being played during the other player's turn.
-
 //TODO we can be more clever with our state scheme later
 `define GAME_ST_START 4'd0
 `define GAME_ST_TURN_X 4'd1
@@ -38,10 +24,8 @@ module game(turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, butt
   wire occ_player[8:0];
   wire game_state[3:0];
 
-  wire valid_move_X, valid_move_O, valid_move;
+  wire valid_move;
   check_valid_move cvm (valid_move, occ_square, sel_pos);
-  assign valid_move_X = valid_move & ((game_state == `GAME_ST_TURN_X) | (game_state == `GAME_ST_ERR_X));
-  assign valid_move_O = valid_move & ((game_state == `GAME_ST_TURN_O) | (game_state == `GAME_ST_ERR_O));
 
   debouncer db_buttonX (buttonX_debounce, buttonX, clk, rst);
   debouncer db_buttonO (buttonO_debounce, buttonO, clk, rst);
@@ -58,26 +42,28 @@ module game(turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, butt
       if (game_state == `GAME_ST_START) begin
         game_state <= `GAME_ST_TURN_X;
       end else if (game_state == `GAME_ST_TURN_X) begin
-        if (buttonO_debounce) game_state <= `GAME_ST_ERR_X;
-        else if (buttonX_debounce) begin
+        if (buttonX_debounce &valid_move) begin
           occ_square <= (occ_square) | (sel_pos); //mark this square as occupied
           occ_player <= (occ_player) | (sel_pos); //set the selected position to high (X)
+        end else if ((buttonX_debounce | buttonO_debounce) & ~valid_move) begin
+          game_state == `GAME_ST_ERR_X;
         end else game_state <= game_state;
       end else if (game_state == `GAME_ST_TURN_O) begin
-        if (buttonX_debounce) game_state <= `GAME_ST_ERR_O;
-        else if (buttonO_debounce) begin
+        if (buttonO_debounce &valid_move) begin
           occ_square <= (occ_square) | (sel_pos); //mark this square as occupied
-          occ_player <= (occ_player | sel_pos) ^ (sel_pos); //set the selected position to low
+          occ_player <= (occ_player) & (~sel_pos); //set the selected position to low (O)
+        end else if ((buttonX_debounce | buttonO_debounce) & ~valid_move) begin
+          game_state == `GAME_ST_ERR_O;
         end else game_state <= game_state;
       end else if (game_state == `GAME_ST_ERR_X) begin
-        if (buttonX_debounce) begin
+        if (buttonX_debounce & valid_move) begin
           occ_square <= (occ_square) | (sel_pos); //mark this square as occupied
           occ_player <= (occ_player) | (sel_pos); //set the selected position to high (X)
         end else game_state <= game_state;
       end else if (game_state == `GAME_ST_ERR_O) begin
-        if (buttonO_debounce) begin
+        if (buttonO_debounce & valid_move) begin
           occ_square <= (occ_square) | (sel_pos); //mark this square as occupied
-          occ_player <= (occ_player | sel_pos) ^ (sel_pos); //set the selected position to low (O)
+          occ_player <= (occ_player) & (~sel_pos); //set the selected position to low (O)
         end else game_state <= game_state;
       end else if (game_state == `GAME_ST_CHECK_X) begin
         if (~valid) game_state == `GAME_ST_ERR_X
@@ -105,7 +91,6 @@ module game(turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, butt
   check_win checker (result, occ_square, occ_player);
 
 endmodule
-
 
 /* 3 in a row means a winner.
  * No winner with 9 occupied spaces means cat's game.
@@ -197,11 +182,11 @@ module check_valid_move(valid, occ_square, sel_pos);
   assign valid = isUnoccupied & isOneHot;
 endmodule
 
-`define ASCII_X //TODO
-`define ASCII_O //TODO
-`define ASCII_C //TODO
-`define ASCII_E //TODO
-`define ASCII_NONE //TODO
+`define ASCII_X 7'b01011000
+`define ASCII_O 7'b01001111
+`define ASCII_C 7'b01000011
+`define ASCII_E 7'b01000101
+`define ASCII_NONE 7'b01101110
 /* Driver between internal game state and ASCII output */
 module game_st_driver (game_st, game_state);
   output game_st[7:0];
@@ -226,9 +211,8 @@ module occ_pos_driver (occ_pos, occ_square, occ_player, trey_winner, flash_clk, 
   input rst;
   input flash_clk;
 
+  /* a mask that gets applied to occ_player at a rate of 1/2 flash_clk */
   reg occ_O_mask[8:0];
-  //flash_clk oo00oo00oo00
-  //occ_O     oo0000oooo00
 
   always @(posedge flash_clk) begin
     if (rst) occ_O_mask = 9'b000000000;
@@ -240,6 +224,8 @@ module occ_pos_driver (occ_pos, occ_square, occ_player, trey_winner, flash_clk, 
   /* Each occ_pos signal is 1'b0 to indicate unoccupied
    * 1'b1 to indicate occupied by X
    * flashing 1'b1 at a rate of ½ flash_clk to indicate occupied by O */
+  /* Only for occupied tiles, display high for all the X's, and only display
+   * high for the Os when occ_O_mask is high */
 
   wire flash_clk_mask[8:0];
   assign wire flash_clk_mask = {flash_clk, flash_clk, flash_clk, flash_clk, flash_clk, flash_clk, flash_clk, flash_clk, flash_clk};
