@@ -1,0 +1,45 @@
+//TODO make a test bench that reads a charater and sends a signal
+//INPUT: X0
+//RESULT: Have the testbench stimulate the module s.t. X places a tile in square 0
+
+`timescale 1ns / 1ps
+
+module game_tb(); // No inputs for a testbench!
+
+  integer i;
+
+  /* Module outputs */
+  wire turnX, turnO;
+  wire [8:0] occ_pos;
+  wire [7:0] game_st;
+
+  /* Module inputs */
+  reg reset, clk, flash_clk;
+  reg buttonX, buttonO;
+  reg [8:0] sel_pos;
+
+  /* Unit under test */
+  game UUT (turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, buttonX, buttonO);
+
+  initial begin
+    /* So we can see the waveform */
+    $dumpfile("dump.vcd"); $dumpvars;
+
+    /* initialize inputs */
+    reset = 0;
+    clk = 0;
+    flash_clk = 0;
+    buttonX = 0;
+    buttonO = 0;
+    sel_pos = 9'b0;
+
+    #100;
+
+    $finish;
+  end
+
+
+  /* Clock toggles every 10 time units */
+  always #10 clk = ~clk;
+
+endmodule
