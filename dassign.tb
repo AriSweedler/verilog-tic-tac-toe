@@ -1,45 +1,104 @@
 //TODO make a test bench that reads a charater and sends a signal
-//INPUT: X0
+//INPUT: File named "moves.txt" that describes a game
 //RESULT: Have the testbench stimulate the module s.t. X places a tile in square 0
 
 `timescale 1ns / 1ps
 
-module game_tb(); // No inputs for a testbench!
+module game_tb(); // No inputs for a testbench
 
   integer i;
 
-  /* Module outputs */
+  /****************************** Unit Under Test *******************************/
+  game UUT (turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, buttonX, buttonO);
+
+  /********************* Unit Under Test Outputs **********************/
   wire turnX, turnO;
   wire [8:0] occ_pos;
   wire [7:0] game_st;
-
-  /* Module inputs */
+  /********************** Unit Under Test Inputs **********************/
   reg reset, clk, flash_clk;
   reg buttonX, buttonO;
-  reg [8:0] sel_pos;
+  wire [8:0] sel_pos;
 
-  /* Unit under test */
-  game UUT (turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, buttonX, buttonO);
+  /* Each reg is a 0/1 then 4 bits of BCD. There are 9 of these registers */
+  /* (9 moves in 1 game of tic-tac-toe. The [9] space is a placeholder) */
+  reg [4:0] MOVES [0:9];
+
+  /* Wires to read data out from the MOVES RAM */
+  reg [3:0] sel_pos_binary;
+  wire [8:0] sel_pos_oneHot;
+  /* Convert the binary number for position select into oneHot */
+  decoder position(sel_pos_oneHot, sel_pos_binary);
+  assign sel_pos = sel_pos_oneHot;
+
+  /*************** Dump vars So we can see the waveform ***************/
+  initial begin
+    $dumpfile("dump.vcd"); $dumpvars;
+  end
 
   initial begin
-    /* So we can see the waveform */
-    $dumpfile("dump.vcd"); $dumpvars;
-
     /* initialize inputs */
-    reset = 0;
+    reset = 1;
     clk = 0;
     flash_clk = 0;
     buttonX = 0;
     buttonO = 0;
-    sel_pos = 9'b0;
-
+    sel_pos_binary = 9'b0;
+    #100;
+    reset = 0;
     #100;
 
+    /* Read input section. Read the moves file into the RAM array named "MOVES" */
+    $readmemh("moves.txt", MOVES);
+    for(i=0; i<=9; i=i+1) begin
+      sel_pos_binary = MOVES[i][3:0];
+
+      //press the right button (buttonX or buttonO)
+      if (MOVES[i][4]) begin
+        #200 buttonX = 1;
+        #200 buttonX = 0;
+      end else  begin
+        #200 buttonO = 1;
+        #200 buttonO = 0;
+      end
+      #200;
+    end
+
+    /* Done */
     $finish;
   end
 
+  /* Clock section. Clock toggles every 10 time units */
+  always begin
+    #10;
+    clk = ~clk;
+  end
 
-  /* Clock toggles every 10 time units */
-  always #10 clk = ~clk;
+  always begin
+    #25;
+    flash_clk = ~flash_clk;
+  end
 
+endmodule
+
+/* turn 4 bits of hex into 9 bits of one-hot */
+module decoder(y, in);
+  input [3:0] in;
+  output reg [8:0] y;
+
+  always@(*) begin
+    case(in)
+      4'b0000:y= 9'b000000000;
+      4'b0001:y= 9'b000000001;
+      4'b0010:y= 9'b000000010;
+      4'b0011:y= 9'b000000100;
+      4'b0100:y= 9'b000001000;
+      4'b0101:y= 9'b000010000;
+      4'b0110:y= 9'b000100000;
+      4'b0111:y= 9'b001000000;
+      4'b1000:y= 9'b010000000;
+      4'b1001:y= 9'b100000000;
+      default:y= 9'b111111111;
+    endcase
+  end
 endmodule

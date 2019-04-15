@@ -38,6 +38,9 @@ module game(turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, butt
   reg [8:0] occ_player;
   reg [3:0] game_state;
 
+  wire [7:0] trey_winner;
+  occ_pos_driver d (occ_pos, occ_square, occ_player, trey_winner, flash_clk, rst);
+
   wire valid_move;
   check_valid_move cvm (valid_move, occ_square, sel_pos);
 
@@ -113,7 +116,7 @@ module game(turnX, turnO, occ_pos, game_st, reset, clk, flash_clk, sel_pos, butt
   end
 
   wire [1:0] result;
-  check_win _check_win (result, occ_square, occ_player);
+  check_win _check_win (result, trey_winner, occ_square, occ_player);
 
 endmodule
 
@@ -123,8 +126,9 @@ endmodule
  */
 /* First bit being high ==> there's a winner. If there's a winner, second bit
  * says who */
-module check_win(result, occ_square, occ_player);
+module check_win(result, trey_winner, occ_square, occ_player);
   output reg [1:0] result; //output state
+  output wire [7:0] trey_winner;
   input [8:0] occ_square; //is there an X or O here?
   input [8:0] occ_player; //if so, which one is it.
 
@@ -140,7 +144,6 @@ module check_win(result, occ_square, occ_player);
    * 852, 741, 630, 876, 543, 210, 840, 642
    * Check for a victory in each trey
    */
-  wire [7:0] trey_winner;
   wire [7:0] trey_player;
   check_trey col0 (trey_winner[0], trey_player[0], {occ_square[8], occ_square[5], occ_square[2]}, {occ_player[8], occ_player[5], occ_player[2]});
   check_trey col1 (trey_winner[1], trey_player[1], {occ_square[7], occ_square[4], occ_square[1]}, {occ_player[7], occ_player[4], occ_player[1]});
@@ -151,13 +154,15 @@ module check_win(result, occ_square, occ_player);
   check_trey dag0 (trey_winner[6], trey_player[6], {occ_square[8], occ_square[4], occ_square[0]}, {occ_player[8], occ_player[4], occ_player[0]});
   check_trey dag1 (trey_winner[7], trey_player[7], {occ_square[6], occ_square[4], occ_square[2]}, {occ_player[6], occ_player[4], occ_player[2]});
 
-  wire isWinner, winningPlayer;
-  assign isWinner = (& trey_winner);
-  assign winningPlayer = (| trey_player);
-
   always @(*) begin
-    if (isWinner) begin
-      result <= {isWinner, winningPlayer};
+    /* If there's a high bit in trey_winner, then we've got a winner */
+    if (| trey_winner) begin
+      /* If there's a high bit in trey_player, then X won. Else O won */
+      if (| trey_player) begin
+        result <= `RESULT_WINX;
+      end else begin
+        result <= `RESULT_WINO;
+      end
     end else if (& occ_square) begin
       result <= `RESULT_CATS;
     end else begin
@@ -175,16 +180,13 @@ module check_trey(win, player, occ_square, occ_player);
   input [2:0] occ_player; // if so, which one is it
 
   /* Is the same player in all squares of this trey? */
-  //assign samePlayer = (occ_player[0] == occ_player[1]) & (occ_player[0] == occ_player[2]);
   wire samePlayer;
   assign samePlayer = (& occ_player) == (| occ_player);
 
   /* If so, and all the squares are occupied (meaning the occ_player data isn't
    * garbage), then that means someone won */
   assign win = samePlayer & (& occ_square);
-  /* filter the player output s.t. ORing them all together will give the
-   * winning player (default 'player' to 0, unless there was a winner. Then
-   * let it have it's true value */
+  /* If there's a winner, set player to be that winner. Else set to 0 */
   assign player = win & occ_player[0];
 endmodule
 
@@ -194,7 +196,6 @@ module check_valid_move(valid, occ_square, sel_pos);
 
   input [8:0] occ_square;
   input [8:0] sel_pos;
-  input [3:0] game_state;
 
   /* Only place a tile in an unoccupied square */
   wire isUnoccupied;
